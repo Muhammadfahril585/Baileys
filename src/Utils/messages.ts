@@ -545,8 +545,20 @@ export const generateWAMessageContent = async (
 		const pollCreationMessage = {
 			name: message.poll.name,
 			selectableOptionsCount: message.poll.selectableCount,
-			options: message.poll.values.map(optionName => ({ optionName }))
-		}
+			options: message.poll.values.map(item => {
+    // ASUMSI: item adalah { name: string, id: string }
+       const visibleName = item.name;
+       const buttonId = item.id;
+    
+    // Trik: Satukan Nama Opsi (yang terlihat) dengan ID Tombol (yang tersembunyi)
+    // Kita gunakan delimiter '||' yang jarang muncul
+       const combinedOptionName = `${visibleName}||${buttonId}`;
+
+       return { 
+         optionName: combinedOptionName 
+       }
+      }),
+
 
 		if (message.poll.toAnnouncementGroup) {
 			// poll v2 is for community announcement groups (single select and multiple)
