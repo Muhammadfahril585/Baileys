@@ -1,7 +1,8 @@
 import { Boom } from '@hapi/boom'
 import NodeCache from '@cacheable/node-cache'
 import readline from 'readline'
-import makeWASocket, { AnyMessageContent, BinaryInfo, CacheStore, delay, DisconnectReason, downloadAndProcessHistorySyncNotification, encodeWAM, fetchLatestBaileysVersion, getAggregateVotesInPollMessage, getHistoryMsg, isJidNewsletter, jidDecode, makeCacheableSignalKeyStore, normalizeMessageContent, PatchedMessageWithRecipientJID, proto, useMultiFileAuthState, WAMessageContent, WAMessageKey } from '../src'
+// Tambahkan WAMessage ke import dari '../src'
+import makeWASocket, { AnyMessageContent, BinaryInfo, CacheStore, delay, DisconnectReason, downloadAndProcessHistorySyncNotification, encodeWAM, fetchLatestBaileysVersion, getAggregateVotesInPollMessage, getHistoryMsg, isJidNewsletter, jidDecode, makeCacheableSignalKeyStore, normalizeMessageContent, PatchedMessageWithRecipientJID, proto, useMultiFileAuthState, WAMessage, WAMessageContent, WAMessageKey } from '../src'
 //import MAIN_LOGGER from '../src/Utils/logger'
 import open from 'open'
 import fs from 'fs'
@@ -28,6 +29,9 @@ logger.level = 'trace'
 
 const doReplies = process.argv.includes('--do-reply')
 const usePairingCode = process.argv.includes('--use-pairing-code')
+
+// external map to store retry counts of messages of pollUpdates (temporary store)
+const pollCreationCache = new NodeCache() as CacheStore
 
 // external map to store retry counts of messages when decryption/encryption fails
 // keep this out of the socket itself, so as to prevent a message decryption/encryption loop across socket restarts
@@ -60,7 +64,7 @@ const startSock = async() => {
 		// comment the line below out
 		// shouldIgnoreJid: jid => isJidBroadcast(jid),
 		// implement to handle retries & poll updates
-		getMessage
+		getMessage: getMessage // <-- (B) MENGGANTI getMessage UNTUK MENGAMBIL DARI CACHE
 	})
 
 
@@ -88,7 +92,7 @@ const startSock = async() => {
 	// efficiently in a batch
 	sock.ev.process(
 		// events is a map for event name => event data
-		async(events) => {
+		async(events) => { // <-- (A) WAJIB ASYNC UNTUK MENGGUNAKAN AWAIT
 			// something about the connection changed
 			// maybe it closed, or we received all offline message or connection opened
 			if(events['connection.update']) {
@@ -145,6 +149,14 @@ const startSock = async() => {
 
         if (upsert.type === 'notify') {
           for (const msg of upsert.messages) {
+            
+            // SIMPAN PESAN POLLING KE CACHE/STORE ANDA DI SINI
+            if (msg.message?.pollCreationMessage || msg.message?.pollCreationMessageV2 || msg.message?.pollCreationMessageV3) {
+                // Simpan pesan Polling asli ke cache agar bisa diambil oleh getMessage
+                pollCreationCache.set(msg.key.id!, msg)
+            }
+
+
             if (msg.message?.conversation || msg.message?.extendedTextMessage?.text) {
               const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text
               if (text == "requestPlaceholder" && !upsert.requestId) {
@@ -176,26 +188,32 @@ const startSock = async() => {
 				)
 
 				for(const { key, update } of events['messages.update']) {
-				  if(pollCreation) {
-            // GANTI logic lama di sini
-            const buttonClicks = getAggregateVotesInPollMessage({
-                message: pollCreation,
-                pollUpdates: update.pollUpdates,
-            });
+				  if(update.pollUpdates) {
             
-            for (const click of buttonClicks) {
-                // Sekarang Anda memiliki command dan JID pengirim!
-                console.log(
-                    `POLL AS BUTTON CLICK: ${click.selectedDisplayText} (${click.buttonId}) clicked by ${click.voterJid}`
-                );
+            // 3. GANTI LOGIC POLLING LAMA DENGAN LOGIC PENGAMBILAN PESAN DAN EKSTRAKSI
+            const originalMessage: WAMessage | undefined = await getMessage(key); 
+            const pollCreation: proto.IMessage | undefined = originalMessage?.message;
+        
+            if(pollCreation) {
+                const buttonClicks = getAggregateVotesInPollMessage({
+                    message: pollCreation,
+                    pollUpdates: update.pollUpdates,
+                });
+                
+                for (const click of buttonClicks) {
+                    // Sekarang Anda memiliki command dan JID pengirim!
+                    console.log(
+                        `POLL AS BUTTON CLICK: ${click.selectedDisplayText} (${click.buttonId}) clicked by ${click.voterJid}`
+                    );
 
-                // *** LOGIC BOT ANDA DITEMPATKAN DI SINI ***
-                // Contoh: membalas chat dengan perintah yang diklik
-                // sock.sendMessage(key.remoteJid, { text: `Perintah diterima: ${click.buttonId}` })
+                    // *** LOGIC BOT ANDA DITEMPATKAN DI SINI ***
+                    // Contoh: membalas chat dengan perintah yang diklik
+                    await sock.sendMessage(key.remoteJid!, { text: `Perintah diterima: ${click.buttonId}` })
+                }
             }
+          }
         }
-    }
-}
+      }
 			if(events['message-receipt.update']) {
 				console.log(events['message-receipt.update'])
 			}
@@ -233,12 +251,19 @@ const startSock = async() => {
 
 	return sock
 
-	async function getMessage(key: WAMessageKey): Promise<WAMessageContent | undefined> {
-	  // Implement a way to retreive messages that were upserted from messages.upsert
-			// up to you
+	// (C) GANTI LOGIC getMessage AGAR BISA MENGAMBIL WAMessage LENGKAP
+	async function getMessage(key: WAMessageKey): Promise<WAMessage | undefined> {
+	  // Ambil dari cache/store yang menyimpan WAMessage lengkap
+	  // Anda harus pastikan 'key.id' digunakan untuk mengambil dari 'pollCreationCache'
+	  const message = pollCreationCache.get<WAMessage>(key.id!)
+	  
+	  // Jika tidak ada di cache, mungkin Anda ingin mengambilnya dari DB/store utama
+	  if (message) {
+	      return message
+	  }
 
-		// only if store is present
-		return proto.Message.create({ conversation: 'test' })
+	  // Jika tidak ada di cache/store, kembalikan undefined
+	  return undefined
 	}
 }
 
