@@ -870,26 +870,37 @@ type VoteAggregation = {
  * @param meId your jid
  * @returns A list of options & their voters
  */
+import { sha256 } from './crypto'
+import { getKeyAuthor } from './generics'
+
+// Tentukan tipe data yang akan dikembalikan oleh fungsi ini (hasil klik tombol)
+type ButtonClickResult = {
+	buttonId: string // Payload/Command dari tombol
+	voterJid: string // JID orang yang mengklik
+	selectedDisplayText: string // Teks yang dilihat pengguna
+}
+
+/**
+ * Menganalisis pembaruan polling (vote) untuk mengekstrak ID Tombol (payload).
+ * Menggantikan logic agregasi vote standar.
+ * @param msg the poll creation message
+ * @param meId your jid
+ * @returns A list of ButtonClickResult (array of clicks)
+ */
 export function getAggregateVotesInPollMessage(
 	{ message, pollUpdates }: Pick<WAMessage, 'pollUpdates' | 'message'>,
 	meId?: string
-) {
-	const opts =
-		message?.pollCreationMessage?.options ||
-		message?.pollCreationMessageV2?.options ||
-		message?.pollCreationMessageV3?.options ||
-		[]
-	const voteHashMap = opts.reduce(
-		(acc, opt) => {
-			const hash = sha256(Buffer.from(opt.optionName || '')).toString()
-			acc[hash] = {
-				name: opt.optionName || '',
-				voters: []
-			}
-			return acc
-		},
-		{} as { [_: string]: VoteAggregation }
-	)
+): ButtonClickResult[] { // Ubah tipe kembalian (return type)
+	const clicks: ButtonClickResult[] = []
+
+	// 1. Dapatkan opsi polling yang dikirim
+	const pollMessage =
+		message?.pollCreationMessage ||
+		message?.pollCreationMessageV2 ||
+		message?.pollCreationMessageV3 ||
+		null
+
+	const opts = pollMessage?.options || []
 
 	for (const update of pollUpdates || []) {
 		const { vote } = update
@@ -897,23 +908,38 @@ export function getAggregateVotesInPollMessage(
 			continue
 		}
 
+		// JID pengirim/pemilih vote
+		const voterJid = getKeyAuthor(update.pollUpdateMessageKey, meId)
+
 		for (const option of vote.selectedOptions || []) {
 			const hash = option.toString()
-			let data = voteHashMap[hash]
-			if (!data) {
-				voteHashMap[hash] = {
-					name: 'Unknown',
-					voters: []
-				}
-				data = voteHashMap[hash]
-			}
 
-			voteHashMap[hash]!.voters.push(getKeyAuthor(update.pollUpdateMessageKey, meId))
+			// 2. Cari opsi polling di pesan awal yang hash-nya cocok
+			const selectedOption = opts.find(opt =>
+				sha256(Buffer.from(opt.optionName || '')).toString() === hash
+			)
+
+			if (selectedOption?.optionName) {
+				const combinedName = selectedOption.optionName
+				const parts = combinedName.split('||') // Memecah string berdasarkan delimiter
+
+				// 3. EKSTRAK PAYLOAD TOMBOL
+				if (parts.length > 1) {
+					const buttonId = parts[1].trim()
+					const selectedDisplayText = parts[0].trim()
+
+					clicks.push({
+						buttonId: buttonId,
+						voterJid: voterJid,
+						selectedDisplayText: selectedDisplayText
+					})
+				}
+			}
 		}
 	}
 
-	return Object.values(voteHashMap)
-}
+	return clicks
+					}
 
 /** Given a list of message keys, aggregates them by chat & sender. Useful for sending read receipts in bulk */
 export const aggregateMessageKeysNotFromMe = (keys: WAMessageKey[]) => {
