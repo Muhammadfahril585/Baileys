@@ -176,21 +176,26 @@ const startSock = async() => {
 				)
 
 				for(const { key, update } of events['messages.update']) {
-					if(update.pollUpdates) {
-						const pollCreation: proto.IMessage = {} // get the poll creation message somehow
-						if(pollCreation) {
-							console.log(
-								'got poll update, aggregation: ',
-								getAggregateVotesInPollMessage({
-									message: pollCreation,
-									pollUpdates: update.pollUpdates,
-								})
-							)
-						}
-					}
-				}
-			}
+				  if(pollCreation) {
+            // GANTI logic lama di sini
+            const buttonClicks = getAggregateVotesInPollMessage({
+                message: pollCreation,
+                pollUpdates: update.pollUpdates,
+            });
+            
+            for (const click of buttonClicks) {
+                // Sekarang Anda memiliki command dan JID pengirim!
+                console.log(
+                    `POLL AS BUTTON CLICK: ${click.selectedDisplayText} (${click.buttonId}) clicked by ${click.voterJid}`
+                );
 
+                // *** LOGIC BOT ANDA DITEMPATKAN DI SINI ***
+                // Contoh: membalas chat dengan perintah yang diklik
+                // sock.sendMessage(key.remoteJid, { text: `Perintah diterima: ${click.buttonId}` })
+            }
+        }
+    }
+}
 			if(events['message-receipt.update']) {
 				console.log(events['message-receipt.update'])
 			}
