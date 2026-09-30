@@ -1,5 +1,5 @@
 {
-  "name": "baileys",
+  "name": "baileys-fahril",
   "type": "module",
   "version": "7.0.0-rc14",
   "description": "A WebSockets library for interacting with WhatsApp Web",
@@ -7,9 +7,9 @@
     "whatsapp",
     "automation"
   ],
-  "homepage": "https://github.com/WhiskeySockets/Baileys/",
+  "homepage": "https://github.com/Muhammadfahril585/Baileys/",
   "repository": {
-    "url": "git@github.com:WhiskeySockets/Baileys.git"
+    "url": "git@github.com:Muhammadfahril585/Baileys.git"
   },
   "license": "MIT",
   "author": "Rajeh Taher",

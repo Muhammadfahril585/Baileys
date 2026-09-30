@@ -3333,6 +3333,7 @@ message Message {
         optional bytes aiPsiMetadata = 25;
         optional AIQueryFanout aiQueryFanout = 26;
         optional MemberLabel memberLabel = 27;
+        optional uint32 afterReadDuration = 28;
         enum Type {
             REVOKE = 0;
             EPHEMERAL_SETTING = 3;

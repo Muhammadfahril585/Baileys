@@ -21,6 +21,7 @@ node_modules
 output.csv
 Proxy
 test.ts
+package-lock.json
 TestData
 wa-logs*
 coverage
